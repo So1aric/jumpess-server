@@ -16,35 +16,49 @@ Deno.serve((req) => {
         break;
       }
     }
-  })
+  });
 
   socket.addEventListener("message", (event) => {
-    const { type, content } = JSON.parse(event.data);
-    console.log("receive message, type: ", type);
-
-    switch (type) {
-      case "join":
-        {
-          processJoin(socket, content);
-        }
-        break;
-
-      case "ice_offer":
-        {
-          processIceOffer(socket, content);
-        }
-        break;
-
-      case "ice_answer":
-        {
-          processIceAnswer(socket, content);
-        }
-        break;
-    }
+    processMessage(socket, event.data);
+    channel.postMessage(JSON.stringify({
+      socket,
+      data: event.data,
+    }));
   });
 
   return response;
 });
+
+const processMessage = (socket: WebSocket, data: string) => {
+  const { type, content } = JSON.parse(data);
+
+  switch (type) {
+    case "join":
+      {
+        processJoin(socket, content);
+      }
+      break;
+
+    case "ice_offer":
+      {
+        processIceOffer(socket, content);
+      }
+      break;
+
+    case "ice_answer":
+      {
+        processIceAnswer(socket, content);
+      }
+      break;
+  }
+};
+
+const channel = new BroadcastChannel("messages");
+channel.onmessage = (event) => {
+  const { socket, data } = JSON.parse(event.data);
+
+  processMessage(socket, data);
+};
 
 const rooms = new Map<string, Map<string, WebSocket>>();
 
@@ -59,6 +73,11 @@ const processJoin = (
 ) => {
   if (!rooms.has(roomName)) {
     rooms.set(roomName, new Map());
+    channel.postMessage(JSON.stringify({
+      type: "join",
+      roomName,
+      userId,
+    }));
   }
 
   const room = rooms.get(roomName)!;
