@@ -52,6 +52,7 @@ Deno.serve((req) => {
 const channel = new BroadcastChannel("messages");
 channel.onmessage = (event) => {
   const message = event.data;
+  console.log('---------\n', message, rooms, '==========\n')
 
   switch (message.type) {
     case "new_room":
