@@ -109,6 +109,13 @@ const processConnect = (
   // Register the connection
   conns.set(uuid, socket);
 
+  // Inform the client
+  socket.send(JSON.stringify({
+    type: "connected",
+    uuid,
+    ready: rooms.has(roomName),
+  }));
+
   if (!rooms.has(roomName)) {
     // We create a room
     rooms.set(roomName, [uuid, ""]);
@@ -131,13 +138,6 @@ const processConnect = (
       uuid,
     });
   }
-
-  // Inform the client
-  socket.send(JSON.stringify({
-    type: "connected",
-    uuid,
-    ready: rooms.has(roomName),
-  }));
 };
 
 const processIceOffer = (
