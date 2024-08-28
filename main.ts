@@ -5,10 +5,13 @@ Deno.serve((req) => {
 
   const { socket, response } = Deno.upgradeWebSocket(req);
 
-  socket.addEventListener("open", () => {
+  socket.addEventListener("open", async () => {
     console.log("a client connected");
     rooms.set([crypto.randomUUID()], 1);
-    console.log(rooms.list({ prefix: [""] }));
+
+    for await (const a of rooms.list({ prefix: [""] })) {
+      console.log(a);
+    }
   });
 
   // socket.addEventListener("close", () => {
