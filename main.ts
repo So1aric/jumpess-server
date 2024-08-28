@@ -10,132 +10,174 @@ Deno.serve((req) => {
   });
 
   socket.addEventListener("close", () => {
-    for (const [roomName, room] of rooms.entries()) {
-      if (Array.from(room.values()).includes(socket)) {
+    for (const [roomName, _] of rooms.entries()) {
+      if (Array.from(conns.values()).includes(socket)) {
         rooms.delete(roomName);
-        break;
+
+        channel.postMessage({
+          type: "delete_room",
+          roomName,
+        });
       }
     }
   });
 
   socket.addEventListener("message", (event) => {
-    processMessage(socket, event.data);
-    channel.postMessage(JSON.stringify({
-      socket,
-      data: event.data,
-    }));
+    const { type, content } = JSON.parse(event.data);
+
+    switch (type) {
+      case "connect":
+        {
+          processConnect(socket, content);
+        }
+        break;
+
+      case "ice_offer":
+        {
+          processIceOffer(socket, content);
+        }
+        break;
+
+      case "ice_answer":
+        {
+          processIceAnswer(socket, content);
+        }
+        break;
+    }
   });
 
   return response;
 });
 
-const processMessage = (socket: WebSocket, data: string) => {
-  const { type, content } = JSON.parse(data);
+const channel = new BroadcastChannel("messages");
+channel.onmessage = (event) => {
+  const message = JSON.parse(event.data);
 
-  switch (type) {
-    case "join":
+  switch (message.type) {
+    case "new_room":
       {
-        processJoin(socket, content);
+        rooms.set(message.roomName, [message.uuid, ""]);
+      }
+      break;
+
+    case "enter_room":
+      {
+        rooms.get(message.roomName)![1] = message.uuid;
+      }
+      break;
+
+    case "delete_room":
+      {
+        rooms.delete(message.roomName);
       }
       break;
 
     case "ice_offer":
       {
-        processIceOffer(socket, content);
+        if (conns.has(message.peerID)) {
+          conns.get(message.peerID)!.send(JSON.stringify({
+            type: "ice_offer",
+            sdp: message.sdp,
+          }));
+        }
       }
       break;
 
     case "ice_answer":
       {
-        processIceAnswer(socket, content);
+        if (conns.has(message.peerID)) {
+          conns.get(message.peerID)!.send(JSON.stringify({
+            type: "ice_answer",
+            sdp: message.sdp,
+          }));
+        }
       }
       break;
   }
 };
 
-const channel = new BroadcastChannel("messages");
-channel.onmessage = (event) => {
-  const { socket, data } = JSON.parse(event.data);
+const rooms = new Map<string, [string, string]>();
+const conns = new Map<string, WebSocket>();
 
-  processMessage(socket, data);
-};
-
-const rooms = new Map<string, Map<string, WebSocket>>();
-
-interface BaseMessageContent {
-  roomName: string;
-  userId: string;
-}
-
-const processJoin = (
+const processConnect = (
   socket: WebSocket,
-  { roomName, userId }: BaseMessageContent,
+  { roomName }: { roomName: string },
 ) => {
+  // Create a uuid for the current connection
+  const uuid = crypto.randomUUID();
+
+  // Register the connection
+  conns.set(uuid, socket);
+
   if (!rooms.has(roomName)) {
-    rooms.set(roomName, new Map());
-    channel.postMessage(JSON.stringify({
-      type: "join",
+    // We create a room
+    rooms.set(roomName, [uuid, ""]);
+
+    // Tell it to other workers
+    channel.postMessage({
+      type: "new_room",
       roomName,
-      userId,
-    }));
-  }
-
-  const room = rooms.get(roomName)!;
-
-  if (room.has(userId)) {
-    socket.send(JSON.stringify({
-      type: "answer_join",
-      content: {
-        status: "failure",
-        reason: "userId unavailable",
-      },
-    }));
+      uuid,
+    });
   } else {
-    socket.send(JSON.stringify({
-      type: "answer_join",
-      content: {
-        status: "success",
-        users: Array.from(room.keys()),
-      },
-    }));
+    // We fill the blank in the current created room
+    // TODO: check if the room is full
+    rooms.get(roomName)![1] = uuid;
 
-    room.set(userId, socket);
+    // Tell it to other workers
+    channel.postMessage({
+      type: "enter_room",
+      roomName,
+      uuid,
+    });
   }
-};
 
-interface IceMessageContent extends BaseMessageContent {
-  target: string;
-  sdp: string;
-}
+  // Inform the client
+  socket.send(JSON.stringify({
+    type: "connected",
+    uuid,
+    ready: rooms.has(roomName),
+  }));
+};
 
 const processIceOffer = (
   _: WebSocket,
-  { roomName, userId, target, sdp }: IceMessageContent,
+  { roomName, uuid, sdp }: { roomName: string; uuid: string; sdp: any },
 ) => {
-  if (!rooms.has(roomName) || !rooms.get(roomName)?.has(userId)) return;
   const room = rooms.get(roomName)!;
+  const peerID = room[0] === uuid ? room[1] : room[0];
 
-  room.get(target)?.send(JSON.stringify({
-    type: "ice_offer",
-    content: {
-      userId,
+  if (conns.has(peerID)) {
+    conns.get(peerID)!.send(JSON.stringify({
+      type: "ice_offer",
       sdp,
-    },
-  }));
+    }));
+  } else {
+    channel.postMessage({
+      type: "ice_offer",
+      peerID,
+      sdp,
+    });
+  }
 };
 
 const processIceAnswer = (
   _: WebSocket,
-  { roomName, userId, target, sdp }: IceMessageContent,
+  { roomName, uuid, sdp }: { roomName: string; uuid: string; sdp: any },
 ) => {
-  if (!rooms.has(roomName) || !rooms.get(roomName)?.has(userId)) return;
   const room = rooms.get(roomName)!;
+  const peerID = room[0] === uuid ? room[1] : room[0];
 
-  room.get(target)?.send(JSON.stringify({
-    type: "ice_answer",
-    content: {
-      userId,
+  if (conns.has(peerID)) {
+    conns.get(peerID)!.send(JSON.stringify({
+      type: "ice_answer",
       sdp,
-    },
-  }));
+    }));
+  } else {
+    channel.postMessage({
+      type: "ice_answer",
+      peerID,
+      sdp,
+    });
+  }
 };
