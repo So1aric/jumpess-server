@@ -82,6 +82,7 @@ channel.onmessage = (event) => {
             type: "found_room",
             room: rooms.get(message.roomName)!,
             roomName: message.roomName,
+            queryUUID: message.queryUUID,
           });
         }
       }
