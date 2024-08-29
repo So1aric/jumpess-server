@@ -141,6 +141,8 @@ const processConnect = (
   conns.set(uuid, socket);
 
   if (!rooms.has(roomName)) {
+    console.log("No room found. Should query.");
+
     const queryUUID = crypto.randomUUID();
 
     channel.postMessage({
@@ -165,6 +167,8 @@ const processConnect = (
 
     queries.set(queryUUID, [queryRoomHandle, queryRoomName, socket]);
   } else {
+    console.log("Found the room.");
+
     // We fill the blank in the current created room
     // TODO: check if the room is full
     rooms.get(roomName)![1] = uuid;
