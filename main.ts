@@ -70,6 +70,8 @@ channel.onmessage = (event) => {
     case "query_room":
       {
         if (rooms.has(message.roomName)) {
+          rooms.get(message.roomName)![1] = message.uuid;
+
           channel.postMessage({
             type: "found_room",
             room: rooms.get(message.roomName)!,
@@ -81,10 +83,17 @@ channel.onmessage = (event) => {
 
     case "found_room":
       {
-        if (queryRoomName !== message.roomName) break;
+        if (!queries.has(message.queryUUID)) break;
 
-        rooms.set(queryRoomName, message.room);
-        clearTimeout(queryRoomHandle);
+        const [handle, roomName, socket] = queries.get(message.queryUUID)!;
+        clearTimeout(handle);
+        rooms.set(roomName, message.room);
+
+        socket.send(JSON.stringify({
+          type: "connected",
+          uuid: message.room[1],
+          ready: true,
+        }));
       }
       break;
 
@@ -132,13 +141,17 @@ const processConnect = (
   conns.set(uuid, socket);
 
   if (!rooms.has(roomName)) {
+    const queryUUID = crypto.randomUUID();
+
     channel.postMessage({
       type: "query_room",
       roomName,
+      queryUUID,
+      uuid,
     });
 
-    queryRoomName = roomName;
-    queryRoomHandle = setTimeout(() => {
+    const queryRoomName = roomName;
+    const queryRoomHandle = setTimeout(() => {
       // We create a room
       rooms.set(roomName, [uuid, ""]);
 
@@ -149,6 +162,8 @@ const processConnect = (
         ready: false,
       }));
     }, 500);
+
+    queries.set(queryUUID, [queryRoomHandle, queryRoomName, socket]);
   } else {
     // We fill the blank in the current created room
     // TODO: check if the room is full
@@ -169,8 +184,7 @@ const processConnect = (
   }
 };
 
-let queryRoomHandle: number;
-let queryRoomName: string;
+const queries = new Map<string, [number, string, WebSocket]>();
 
 const processIceOffer = (
   _: WebSocket,
