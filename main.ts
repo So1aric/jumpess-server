@@ -121,7 +121,7 @@ channel.onmessage = (event) => {
 const rooms = new Map<string, [string, string]>();
 const conns = new Map<string, WebSocket>();
 
-const processConnect = async (
+const processConnect = (
   socket: WebSocket,
   { roomName }: { roomName: string },
 ) => {
@@ -131,7 +131,6 @@ const processConnect = async (
   // Register the connection
   conns.set(uuid, socket);
 
-  // // Inform the client
   if (!rooms.has(roomName)) {
     channel.postMessage({
       type: "query_room",
@@ -143,12 +142,12 @@ const processConnect = async (
       // We create a room
       rooms.set(roomName, [uuid, ""]);
 
-      // Tell it to other workers
-      channel.postMessage({
-        type: "new_room",
-        roomName,
+      // Inform the client
+      socket.send(JSON.stringify({
+        type: "connected",
         uuid,
-      });
+        ready: false,
+      }));
     }, 500);
   } else {
     // We fill the blank in the current created room
