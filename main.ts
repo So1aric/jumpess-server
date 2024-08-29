@@ -15,6 +15,7 @@ Deno.serve((req) => {
         rooms.delete(roomName);
 
         channel.postMessage({
+          serial,
           type: "delete_room",
           roomName,
         });
@@ -49,10 +50,14 @@ Deno.serve((req) => {
   return response;
 });
 
+const serial = crypto.randomUUID();
+
 const channel = new BroadcastChannel("messages");
 channel.onmessage = (event) => {
   const message = event.data;
   console.log(message);
+
+  if (message.serial === serial) return;
 
   switch (message.type) {
     case "new_room":
@@ -73,6 +78,7 @@ channel.onmessage = (event) => {
           rooms.get(message.roomName)![1] = message.uuid;
 
           channel.postMessage({
+            serial,
             type: "found_room",
             room: rooms.get(message.roomName)!,
             roomName: message.roomName,
@@ -146,6 +152,7 @@ const processConnect = (
     const queryUUID = crypto.randomUUID();
 
     channel.postMessage({
+      serial,
       type: "query_room",
       roomName,
       queryUUID,
@@ -175,6 +182,7 @@ const processConnect = (
 
     // Tell it to other workers
     channel.postMessage({
+      serial,
       type: "enter_room",
       roomName,
       uuid,
@@ -204,6 +212,7 @@ const processIceOffer = (
     }));
   } else {
     channel.postMessage({
+      serial,
       type: "ice_offer",
       peerID,
       sdp,
@@ -225,6 +234,7 @@ const processIceAnswer = (
     }));
   } else {
     channel.postMessage({
+      serial,
       type: "ice_answer",
       peerID,
       sdp,
